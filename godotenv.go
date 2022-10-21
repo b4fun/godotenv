@@ -77,11 +77,16 @@ func Overload(filenames ...string) (err error) {
 // Read all env (with same file loading semantics as Load) but return values as
 // a map rather than automatically writing values into env
 func Read(filenames ...string) (envMap map[string]string, err error) {
+	return ReadWithParser(&Parser{}, filenames...)
+}
+
+// ReadWithParser acts as Read but allows you to specify a custom parser.
+func ReadWithParser(parser *Parser, filenames ...string) (envMap map[string]string, err error) {
 	filenames = filenamesOrDefault(filenames)
 	envMap = make(map[string]string)
 
 	for _, filename := range filenames {
-		individualEnvMap, individualErr := readFile(filename)
+		individualEnvMap, individualErr := readFile(filename, parser)
 
 		if individualErr != nil {
 			err = individualErr
@@ -222,7 +227,7 @@ func filenamesOrDefault(filenames []string) []string {
 }
 
 func loadFile(filename string, overload bool) error {
-	envMap, err := readFile(filename)
+	envMap, err := readFile(filename, &Parser{})
 	if err != nil {
 		return err
 	}
@@ -243,14 +248,14 @@ func loadFile(filename string, overload bool) error {
 	return nil
 }
 
-func readFile(filename string) (envMap map[string]string, err error) {
+func readFile(filename string, parser *Parser) (envMap map[string]string, err error) {
 	file, err := os.Open(filename)
 	if err != nil {
 		return
 	}
 	defer file.Close()
 
-	return Parse(file)
+	return parser.Parse(file)
 }
 
 var exportRegex = regexp.MustCompile(`^\s*(?:export\s+)?(.*?)\s*$`)
