@@ -4,11 +4,11 @@
 //
 // The TL;DR is that you make a .env file that looks something like
 //
-// 		SOME_ENV_VAR=somevalue
+//	SOME_ENV_VAR=somevalue
 //
 // and then in your go code you can call
 //
-// 		godotenv.Load()
+//	godotenv.Load()
 //
 // and all the env vars declared in .env will be available through os.Getenv("SOME_ENV_VAR")
 package godotenv
@@ -32,11 +32,11 @@ const doubleQuoteSpecialChars = "\\\n\r\"!$`"
 //
 // Call this function as close as possible to the start of your program (ideally in main)
 //
-// If you call Load without any args it will default to loading .env in the current path
+// # If you call Load without any args it will default to loading .env in the current path
 //
 // You can otherwise tell it which files to load (there can be more than one) like
 //
-//		godotenv.Load("fileone", "filetwo")
+//	godotenv.Load("fileone", "filetwo")
 //
 // It's important to note that it WILL NOT OVERRIDE an env variable that already exists - consider the .env file to set dev vars or sensible defaults
 func Load(filenames ...string) (err error) {
@@ -55,11 +55,11 @@ func Load(filenames ...string) (err error) {
 //
 // Call this function as close as possible to the start of your program (ideally in main)
 //
-// If you call Overload without any args it will default to loading .env in the current path
+// # If you call Overload without any args it will default to loading .env in the current path
 //
 // You can otherwise tell it which files to load (there can be more than one) like
 //
-//		godotenv.Overload("fileone", "filetwo")
+//	godotenv.Overload("fileone", "filetwo")
 //
 // It's important to note this WILL OVERRIDE an env variable that already exists - consider the .env file to forcefully set all vars.
 func Overload(filenames ...string) (err error) {
@@ -96,8 +96,37 @@ func Read(filenames ...string) (envMap map[string]string, err error) {
 	return
 }
 
+// LineParser parses a single line of an env file
+type LineParser interface {
+	ParseLine(line string, envMap map[string]string) (key string, value string, err error)
+}
+
+type LineParserFunc func(line string, envMap map[string]string) (string, string, error)
+
+var _ LineParser = LineParserFunc(nil)
+
+func (f LineParserFunc) ParseLine(line string, envMap map[string]string) (key string, value string, err error) {
+	return f(line, envMap)
+}
+
+// Parser parses an env file.
+type Parser struct {
+	// LineParser specifies the parser to use for each line.
+	// If nil, the default parser is used.
+	LineParser LineParser
+}
+
+func (p *Parser) parseLine(line string, envMap map[string]string) (string, string, error) {
+	ps := p.LineParser
+	if ps == nil {
+		ps = ParseLine
+	}
+
+	return ps.ParseLine(line, envMap)
+}
+
 // Parse reads an env file from io.Reader, returning a map of keys and values.
-func Parse(r io.Reader) (envMap map[string]string, err error) {
+func (p *Parser) Parse(r io.Reader) (envMap map[string]string, err error) {
 	envMap = make(map[string]string)
 
 	var lines []string
@@ -113,7 +142,7 @@ func Parse(r io.Reader) (envMap map[string]string, err error) {
 	for _, fullLine := range lines {
 		if !isIgnoredLine(fullLine) {
 			var key, value string
-			key, value, err = parseLine(fullLine, envMap)
+			key, value, err = p.parseLine(fullLine, envMap)
 
 			if err != nil {
 				return
@@ -124,7 +153,12 @@ func Parse(r io.Reader) (envMap map[string]string, err error) {
 	return
 }
 
-//Unmarshal reads an env file from a string, returning a map of keys and values.
+// Parse reads an env file from io.Reader, returning a map of keys and values.
+func Parse(r io.Reader) (envMap map[string]string, err error) {
+	return (&Parser{}).Parse(r)
+}
+
+// Unmarshal reads an env file from a string, returning a map of keys and values.
 func Unmarshal(str string) (envMap map[string]string, err error) {
 	return Parse(strings.NewReader(str))
 }
@@ -221,6 +255,8 @@ func readFile(filename string) (envMap map[string]string, err error) {
 
 var exportRegex = regexp.MustCompile(`^\s*(?:export\s+)?(.*?)\s*$`)
 
+var ErrCannotSeparateKeyAndValue = errors.New("cannot separate key and value")
+
 func parseLine(line string, envMap map[string]string) (key string, value string, err error) {
 	if len(line) == 0 {
 		err = errors.New("zero length string")
@@ -259,7 +295,7 @@ func parseLine(line string, envMap map[string]string) (key string, value string,
 	}
 
 	if len(splitString) != 2 {
-		err = errors.New("Can't separate key from value")
+		err = ErrCannotSeparateKeyAndValue
 		return
 	}
 
@@ -276,6 +312,9 @@ func parseLine(line string, envMap map[string]string) (key string, value string,
 	value = parseValue(splitString[1], envMap)
 	return
 }
+
+// ParseLine is the default line parser function.
+var ParseLine LineParser = LineParserFunc(parseLine)
 
 var (
 	singleQuotesRegex  = regexp.MustCompile(`\A'(.*)'\z`)
